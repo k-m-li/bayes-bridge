@@ -329,7 +329,7 @@ class BayesBridge():
                 if not len(lscale) == (self.n_pred - self.n_unshrunk):
                     raise ValueError('Invalid initial length of local scale parameter')
             else:
-                lscale = np.ones(self.n_pred - self.n_unshrunk) / gscale
+                lscale = np.ones(self.n_pred - self.n_unshrunk)
 
         if self.prior._gscale_paramet == 'coef_magnitude':
             # Gibbs sampler requires the raw parametrization, though
@@ -465,6 +465,9 @@ class BayesBridge():
         return gscale
 
     def update_local_scale(self, gscale, beta_with_shrinkage, bridge_exp):
+
+        if bridge_exp == 2:
+            return np.ones(beta_with_shrinkage.size)
 
         lscale_sq = .5 / self.rg.tilted_stable(
             bridge_exp / 2, (beta_with_shrinkage / gscale) ** 2

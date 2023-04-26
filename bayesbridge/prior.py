@@ -75,6 +75,8 @@ class RegressionCoefPrior():
             raise ValueError(
                 "Unequal lengths for prior means and sd of fixed effect"
             )   
+        if bridge_exponent > 2:
+            raise ValueError("Exponent larger than 2 is unsupported.")
 
         if np.isscalar(sd_for_fixed_effect):
             sd_for_fixed_effect = sd_for_fixed_effect * np.ones(n_fixed_effect)
