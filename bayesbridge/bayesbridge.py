@@ -25,8 +25,8 @@ class BayesBridge():
 
         self.n_obs = model.n_obs
         self.n_pred = model.n_pred
+        self.n_mixture = prior.n_mixture
         if prior.n_mixture > 0:
-            self.n_mixture = prior.n_mixture
             self.sd_for_mixture = prior.sd_for_mixture.copy()
             self.mean_for_mixture = prior.mean_for_mixture.copy()
             self.p_gamma = prior.p_for_mixture
@@ -366,11 +366,13 @@ class BayesBridge():
             }
         else:
             optim_info = None
-
-        if 'gamma' not in init:
-            gamma = np.concatenate([np.ones(self.n_mixture), np.zeros(self.n_pred - self.n_mixture - self.n_unshrunk)])
-        else:
-            gamma = init['gamma'].copy()
+        
+        if self.n_mixture > 0:
+            if 'gamma' not in init:
+                gamma = np.concatenate([np.ones(self.n_mixture), np.zeros(self.n_pred - self.n_mixture - self.n_unshrunk)])
+            else:
+                gamma = init['gamma'].copy()
+        else: gamma = None
 
         init = {
             'coef': coef,
