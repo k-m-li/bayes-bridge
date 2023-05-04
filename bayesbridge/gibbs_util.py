@@ -119,7 +119,7 @@ class MarkovChainManager():
 
         return new_samples, new_mcmc_info
 
-    def pre_allocate(self, samples, sampling_info, n_post_burnin, thin, params_to_save, sampling_method):
+    def pre_allocate(self, samples, sampling_info, n_post_burnin, thin, n_mixture, params_to_save, sampling_method):
 
         n_sample = math.floor(n_post_burnin / thin)  # Number of samples to keep
 
@@ -140,6 +140,9 @@ class MarkovChainManager():
 
         if 'logp' in params_to_save:
             samples['logp'] = np.zeros(n_sample)
+
+        if 'gamma' in params_to_save:
+            samples['gamma'] = np.zeros((n_mixture, n_sample))
 
         for key in self.get_sampling_info_keys(sampling_method):
             sampling_info[key] = np.zeros(n_sample)
@@ -163,7 +166,7 @@ class MarkovChainManager():
 
     def store_current_state(
             self, samples, mcmc_iter, n_burnin, thin, coef, lscale,
-            gscale, obs_prec, logp, params_to_save):
+            gscale, obs_prec, gamma, logp, params_to_save):
 
         if mcmc_iter <= n_burnin or (mcmc_iter - n_burnin) % thin != 0:
             return
@@ -188,6 +191,9 @@ class MarkovChainManager():
         if 'logp' in params_to_save:
             samples['logp'][index] = logp
 
+        if 'gamma' in params_to_save:
+            samples['gamma'][:, index] = gamma
+
     def store_sampling_info(
             self, sampling_info, info, mcmc_iter, n_burnin, thin, sampling_method):
 
@@ -198,11 +204,12 @@ class MarkovChainManager():
         for key in self.get_sampling_info_keys(sampling_method):
             sampling_info[key][index] = info[key]
 
-    def pack_parameters(self, coef, obs_prec, lscale, gscale):
+    def pack_parameters(self, coef, obs_prec, lscale, gscale, gamma):
         state = {
             'coef': coef,
             'local_scale': lscale,
             'global_scale': gscale,
+            'gamma': gamma,
         }
         if self.model_name in ('linear', 'logit'):
             state['obs_prec'] = obs_prec

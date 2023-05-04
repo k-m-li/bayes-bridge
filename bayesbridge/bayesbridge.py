@@ -1,6 +1,8 @@
 import numpy as np
 import math
 import time
+from scipy.stats import bernoulli
+from scipy.stats import norm
 from .util import simplify_warnings # Monkey patch the warning format
 from warnings import warn
 from .random import BasicRandom
@@ -23,6 +25,11 @@ class BayesBridge():
 
         self.n_obs = model.n_obs
         self.n_pred = model.n_pred
+        if prior.n_mixture > 0:
+            self.n_mixture = prior.n_mixture
+            self.sd_for_mixture = prior.sd_for_mixture.copy()
+            self.mean_for_mixture = prior.mean_for_mixture.copy()
+            self.p_gamma = prior.p_for_mixture
         self.n_unshrunk = prior.n_fixed
         self.prior_sd_for_unshrunk = prior.sd_for_fixed.copy()
         self.prior_mean_for_unshrunk = prior.mean_for_fixed.copy()
@@ -110,7 +117,7 @@ class BayesBridge():
 
     def gibbs(self, n_iter, n_burnin=0, thin=1, seed=None,
               init={'global_scale': 0.1}, params_to_save=('coef', 'global_scale', 'logp'),
-              coef_sampler_type=None, n_status_update=0, params_to_fix = (),
+              coef_sampler_type=None, n_status_update=0,
               options=None, _add_iter_mode=False):
         """ Generate posterior samples under the specified model and prior.
 
@@ -150,9 +157,6 @@ class BayesBridge():
             all the parameters (but beaware of the extra memory requirement),
             including local scale and, depending on the model, precision (
             inverse variance) of observations.
-        params_to_fix : {(), list of str}
-            Specifies which parameters to fix during MCMC iterations to values specified
-            by 'init' option. Only currently supports 'global_scale'. 
         n_status_update : int
             Number of updates to print on stdout during the sampler run.
 
@@ -182,12 +186,21 @@ class BayesBridge():
 
         if not _add_iter_mode:
             self.rg.set_seed(seed)
-            self.reg_coef_sampler = SparseRegressionCoefficientSampler(
-                self.n_pred, self.prior_sd_for_unshrunk, self.prior_mean_for_unshrunk,
-                options.coef_sampler_type, options.curvature_est_stabilized,
-                self.prior.slab_size
-            )
-
+            if self.n_mixture > 0:
+                self.reg_coef_sampler = SparseRegressionCoefficientSampler(
+                    self.n_pred, self.prior_sd_for_unshrunk, self.prior_mean_for_unshrunk,
+                    options.coef_sampler_type, 
+                    self.sd_for_mixture, self.mean_for_mixture,
+                    options.curvature_est_stabilized,
+                    self.prior.slab_size
+                )
+            else:
+                self.reg_coef_sampler = SparseRegressionCoefficientSampler(
+                    self.n_pred, self.prior_sd_for_unshrunk, self.prior_mean_for_unshrunk,
+                    options.coef_sampler_type,
+                    options.curvature_est_stabilized,
+                    self.prior.slab_size
+                )
         if params_to_save == 'all':
             params_to_save = (
                 'coef', 'local_scale', 'global_scale', 'logp'
@@ -200,14 +213,14 @@ class BayesBridge():
         self.manager.stamp_time(start_time)
 
         # Initial state of the Markov chain
-        coef, obs_prec, lscale, gscale, init, initial_optim_info = \
+        coef, obs_prec, lscale, gscale, gamma, init, initial_optim_info = \
             self.initialize_chain(init, self.prior.bridge_exp)
 
         # Pre-allocate
         samples = {}
         sampling_info = {}
         self.manager.pre_allocate(
-            samples, sampling_info, n_iter - n_burnin, thin, params_to_save,
+            samples, sampling_info, n_iter - n_burnin, thin, self.n_mixture, params_to_save,
             options.coef_sampler_type
         )
 
@@ -215,23 +228,25 @@ class BayesBridge():
         for mcmc_iter in range(1, n_iter + 1):
 
             coef, info = self.update_regress_coef(
-                coef, obs_prec, gscale, lscale, options.coef_sampler_type
-            )
+                coef, obs_prec, gscale, lscale, gamma, options.coef_sampler_type
+            )    
 
             obs_prec = self.update_obs_precision(coef)
 
             # Draw from gscale | coef and then lscale | gscale, coef.
             # (The order matters.)
-            if 'global_scale' in params_to_fix:
-                gscale = gscale
-            else:
-                gscale = self.update_global_scale(
+            gscale = self.update_global_scale(
                     gscale, coef[self.n_unshrunk:], self.prior.bridge_exp,
                     method=options.gscale_update
                 )
 
             lscale = self.update_local_scale(
                 gscale, coef[self.n_unshrunk:], self.prior.bridge_exp)
+            
+            if self.n_mixture > 0: 
+                gamma = self.update_gamma(coef[1:self.n_mixture + 1], gscale, lscale)
+            else:
+                gamma = None
 
             logp = self.compute_posterior_logprob(
                 coef, gscale, obs_prec, self.prior.bridge_exp
@@ -239,7 +254,7 @@ class BayesBridge():
 
             self.manager.store_current_state(
                 samples, mcmc_iter, n_burnin, thin, coef, lscale, gscale,
-                obs_prec, logp, params_to_save
+                obs_prec, gamma, logp, params_to_save
             )
             self.manager.store_sampling_info(
                 sampling_info, info, mcmc_iter, n_burnin, thin,
@@ -259,7 +274,7 @@ class BayesBridge():
             ) # Modify in place.
 
         _markov_chain_state = \
-            self.manager.pack_parameters(coef, obs_prec, lscale, gscale)
+            self.manager.pack_parameters(coef, obs_prec, lscale, gscale, gamma)
 
         _reg_coef_sampling_info = None
         mcmc_info = {
@@ -289,7 +304,7 @@ class BayesBridge():
         """ Choose the user-specified state if provided, the default ones otherwise."""
 
         valid_param_name \
-            = ('coef', 'local_scale', 'global_scale', 'obs_prec', 'logp')
+            = ('coef', 'local_scale', 'global_scale', 'obs_prec', 'logp', 'gamma')
         for key in init:
             if key not in valid_param_name:
                 warn("'{:s}' is not a valid parameter name and "
@@ -352,14 +367,20 @@ class BayesBridge():
         else:
             optim_info = None
 
+        if 'gamma' not in init:
+            gamma = np.concatenate([np.ones(self.n_mixture), np.zeros(self.n_pred - self.n_mixture - self.n_unshrunk)])
+        else:
+            gamma = init['gamma'].copy()
+
         init = {
             'coef': coef,
             'obs_prec': obs_prec,
             'local_scale': lscale,
-            'global_scale': gscale
+            'global_scale': gscale,
+            'gamma': gamma
         }
 
-        return coef, obs_prec, lscale, gscale, init, optim_info
+        return coef, obs_prec, lscale, gscale, gamma, init, optim_info
 
     def initialize_obs_precision(self, init, coef):
         if 'obs_prec' in init:
@@ -378,7 +399,7 @@ class BayesBridge():
             obs_prec = None
         return obs_prec
 
-    def update_regress_coef(self, coef, obs_prec, gscale, lscale, sampling_method):
+    def update_regress_coef(self, coef, obs_prec, gscale, lscale, gamma, sampling_method):
 
         if sampling_method in ('cholesky', 'cg'):
 
@@ -389,7 +410,7 @@ class BayesBridge():
                 y_gaussian = (self.model.n_success - self.model.n_trial / 2) / obs_prec
 
             coef, info = self.reg_coef_sampler.sample_gaussian_posterior(
-                y_gaussian, self.model.design, obs_prec, gscale, lscale,
+                y_gaussian, self.model.design, obs_prec, gscale, lscale, gamma,
                 sampling_method
             )
 
@@ -455,6 +476,35 @@ class BayesBridge():
             )
 
         return gscale
+
+    def update_gamma(
+            self, beta, gscale, lscale):
+        sd_unshrunk = self.reg_coef_sampler.compute_prior_shrunk_scale(gscale, lscale[:self.n_mixture])
+        a = norm(self.mean_for_mixture, self.sd_for_mixture).pdf(beta)
+        b = norm(0, sd_unshrunk).pdf(beta)
+        p = a/(a + b)
+        for i in range(len(p)):
+            if a[i] + b[i] == 0:
+                p[i] = 0
+        gamma = bernoulli.rvs(p)
+        return(gamma)
+
+    
+    def compute_gamma_acceptance(
+            self, beta_prop, beta_null, y, design, omega):
+        rss_prop = np.dot(
+            y - design.dot(beta_prop), 
+            omega * y - design.dot(beta_prop)*omega)
+        p_prop = math.exp(-1/2 * rss_prop)
+        rss_null = np.dot(
+            y - design.dot(beta_null), 
+            omega * y - design.dot(beta_null)*omega)
+        p_null = math.exp(-1/2 * rss_null)
+        if p_prop == 0 and p_null == 0:
+            ratio = 0
+        else:
+            ratio = p_prop/p_null
+        return ratio
 
     def monte_carlo_em_global_scale(
             self, beta_with_shrinkage, bridge_exp):

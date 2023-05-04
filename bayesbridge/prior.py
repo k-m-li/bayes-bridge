@@ -13,6 +13,10 @@ class RegressionCoefPrior():
             sd_for_intercept=float('inf'),
             sd_for_fixed_effect=float('inf'),
             mean_for_fixed_effect=float('inf'),
+            n_mixture = 0,
+            sd_for_mixture = float('inf'),
+            mean_for_mixture = float('inf'),
+            p_for_mixture = float('inf'),
             regularizing_slab_size=float('inf'),
             global_scale_prior_hyper_param=None,
             _global_scale_parametrization='coef_magnitude'
@@ -70,11 +74,28 @@ class RegressionCoefPrior():
                 "Prior mean for fixed effects must be specified either by a "
                 "scalar or array of the same length as n_fixed_effect."
             )
+        if not (np.isscalar(sd_for_mixture)
+                or n_mixture == len(sd_for_mixture)):
+            raise ValueError(
+                "Prior sd for mixture prior must be specified either by a "
+                "scalar or array of the same length as n_mixture."
+            )
+        if not (np.isscalar(mean_for_mixture)
+                or n_mixture == len(mean_for_mixture)):
+            raise ValueError(
+                "Prior mean for mixture prior must be specified either by a "
+                "scalar or array of the same length as n_mixture."
+            )
         if not (np.isscalar(mean_for_fixed_effect)
                 or len(sd_for_fixed_effect) == len(mean_for_fixed_effect)):
             raise ValueError(
                 "Unequal lengths for prior means and sd of fixed effect"
             )   
+        if not (np.isscalar(mean_for_mixture)
+                or len(sd_for_mixture) == len(mean_for_mixture)):
+            raise ValueError(
+                "Unequal lengths for prior means and sd of mixture prior"
+            )  
         if bridge_exponent > 2:
             raise ValueError("Exponent larger than 2 is unsupported.")
 
@@ -83,12 +104,20 @@ class RegressionCoefPrior():
         self.sd_for_intercept = sd_for_intercept
         if np.isscalar(mean_for_fixed_effect):
             mean_for_fixed_effect = mean_for_fixed_effect * np.ones(n_fixed_effect)
+        if n_fixed_effect > 0 and n_mixture > 0:
+            raise ValueError(
+                "Specifying both a fixed effects prior and mixture prior is unsupported."
+            )
         self.mean_for_fixed = mean_for_fixed_effect
         self.sd_for_fixed = sd_for_fixed_effect
         self.slab_size = regularizing_slab_size
         self.n_fixed = n_fixed_effect
         self.bridge_exp = bridge_exponent
         self._gscale_paramet = _global_scale_parametrization
+        self.mean_for_mixture = mean_for_mixture
+        self.n_mixture = n_mixture
+        self.sd_for_mixture = sd_for_mixture
+        self.p_for_mixture = p_for_mixture
         if global_scale_prior_hyper_param is None:
             self.param = {
                 'gscale_neg_power': {'shape': 0., 'rate': 0.},
