@@ -73,18 +73,6 @@ class RegressionCoefPrior():
                 "Prior mean for fixed effects must be specified either by a "
                 "scalar or array of the same length as n_fixed_effect."
             )
-        if not (np.isscalar(sd_for_mixture)
-                or n_mixture == len(sd_for_mixture)):
-            raise ValueError(
-                "Prior sd for mixture prior must be specified either by a "
-                "scalar or array of the same length as n_mixture."
-            )
-        if not (np.isscalar(mean_for_mixture)
-                or n_mixture == len(mean_for_mixture)):
-            raise ValueError(
-                "Prior mean for mixture prior must be specified either by a "
-                "scalar or array of the same length as n_mixture."
-            )
         if not (np.isscalar(mean_for_fixed_effect)
                 or len(sd_for_fixed_effect) == len(mean_for_fixed_effect)):
             raise ValueError(
@@ -100,9 +88,12 @@ class RegressionCoefPrior():
 
         if np.isscalar(sd_for_fixed_effect):
             sd_for_fixed_effect = sd_for_fixed_effect * np.ones(n_fixed_effect)
+
         self.sd_for_intercept = sd_for_intercept
+
         if np.isscalar(mean_for_fixed_effect):
             mean_for_fixed_effect = mean_for_fixed_effect * np.ones(n_fixed_effect)
+
         if n_fixed_effect > 0 and n_mixture > 0:
             raise ValueError(
                 "Specifying both a fixed effects prior and mixture prior is unsupported."
