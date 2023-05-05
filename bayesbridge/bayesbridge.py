@@ -29,7 +29,6 @@ class BayesBridge():
         if prior.n_mixture > 0:
             self.sd_for_mixture = prior.sd_for_mixture.copy()
             self.mean_for_mixture = prior.mean_for_mixture.copy()
-            self.p_gamma = prior.p_for_mixture
         self.n_unshrunk = prior.n_fixed
         self.prior_sd_for_unshrunk = prior.sd_for_fixed.copy()
         self.prior_mean_for_unshrunk = prior.mean_for_fixed.copy()
