@@ -25,10 +25,6 @@ class BayesBridge():
 
         self.n_obs = model.n_obs
         self.n_pred = model.n_pred
-        self.n_mixture = prior.n_mixture
-        if prior.n_mixture > 0:
-            self.sd_for_mixture = prior.sd_for_mixture.copy()
-            self.mean_for_mixture = prior.mean_for_mixture.copy()
         self.n_unshrunk = prior.n_fixed
         self.prior_sd_for_unshrunk = prior.sd_for_fixed.copy()
         self.prior_mean_for_unshrunk = prior.mean_for_fixed.copy()
@@ -37,6 +33,12 @@ class BayesBridge():
             self.prior_sd_for_unshrunk = np.concatenate((
                 [prior.sd_for_intercept], self.prior_sd_for_unshrunk
             ))
+        self.n_mixture = prior.n_mixture
+        if self.n_mixture == 'All':
+            self.n_mixture = self.n_pred - self.n_unshrunk
+        if self.n_mixture > 0:
+            self.sd_for_mixture = prior.sd_for_mixture.copy()
+            self.mean_for_mixture = prior.mean_for_mixture.copy()
 
         self.model = model
         self.prior = prior
@@ -235,17 +237,16 @@ class BayesBridge():
             # Draw from gscale | coef and then lscale | gscale, coef.
             # (The order matters.)
             gscale = self.update_global_scale(
-                    gscale, coef[self.n_unshrunk:], self.prior.bridge_exp,
+                    gscale, coef[self.n_unshrunk:][np.where(gamma == 0)], self.prior.bridge_exp,
                     method=options.gscale_update
                 )
-
+            
             lscale = self.update_local_scale(
-                gscale, coef[self.n_unshrunk:], self.prior.bridge_exp)
+                gscale, coef[self.n_unshrunk:], self.prior.bridge_exp, gamma,
+                method = options.lscale_update, prev_lscale = lscale)
             
             if self.n_mixture > 0: 
-                gamma = self.update_gamma(coef[1:self.n_mixture + 1], gscale, lscale)
-            else:
-                gamma = None
+                gamma[:self.n_mixture] = self.update_gamma(coef[self.n_unshrunk:self.n_mixture + self.n_unshrunk], gscale, lscale)
 
             logp = self.compute_posterior_logprob(
                 coef, gscale, obs_prec, self.prior.bridge_exp
@@ -322,13 +323,18 @@ class BayesBridge():
 
         obs_prec = self.initialize_obs_precision(init, coef)
 
+        if 'gamma' in init:
+                gamma = init['gamma'].copy()
+        else:
+                gamma = np.zeros(self.n_pred-self.n_unshrunk)
+
         if coef_only_specified:
             gscale = self.update_global_scale(
                 None, coef[self.n_unshrunk:], bridge_exp,
                 method='optimize'
             )
             lscale = self.update_local_scale(
-                gscale, coef[self.n_unshrunk:], bridge_exp
+                gscale, coef[self.n_unshrunk:], bridge_exp, gamma
             )
         else:
             if 'global_scale' not in init:
@@ -358,20 +364,13 @@ class BayesBridge():
             )
             obs_prec = self.update_obs_precision(coef)
             lscale = self.update_local_scale(
-                gscale, coef[self.n_unshrunk:], bridge_exp
+                gscale, coef[self.n_unshrunk:], bridge_exp, gamma
             )
             optim_info = {
                 key: info[key] for key in ['is_success', 'n_design_matvec', 'n_iter']
             }
         else:
             optim_info = None
-        
-        if self.n_mixture > 0:
-            if 'gamma' not in init:
-                gamma = np.concatenate([np.ones(self.n_mixture), np.zeros(self.n_pred - self.n_mixture - self.n_unshrunk)])
-            else:
-                gamma = init['gamma'].copy()
-        else: gamma = None
 
         init = {
             'coef': coef,
@@ -490,23 +489,6 @@ class BayesBridge():
         gamma = bernoulli.rvs(p)
         return(gamma)
 
-    
-    def compute_gamma_acceptance(
-            self, beta_prop, beta_null, y, design, omega):
-        rss_prop = np.dot(
-            y - design.dot(beta_prop), 
-            omega * y - design.dot(beta_prop)*omega)
-        p_prop = math.exp(-1/2 * rss_prop)
-        rss_null = np.dot(
-            y - design.dot(beta_null), 
-            omega * y - design.dot(beta_null)*omega)
-        p_null = math.exp(-1/2 * rss_null)
-        if p_prop == 0 and p_null == 0:
-            ratio = 0
-        else:
-            ratio = p_prop/p_null
-        return ratio
-
     def monte_carlo_em_global_scale(
             self, beta_with_shrinkage, bridge_exp):
         """ Maximize the likelihood (not posterior conditional) 'coef | gscale'. """
@@ -515,15 +497,23 @@ class BayesBridge():
         gscale = phi ** - (1 / bridge_exp)
         return gscale
 
-    def update_local_scale(self, gscale, beta_with_shrinkage, bridge_exp):
-
+    def update_local_scale(self, gscale, beta_with_shrinkage, bridge_exp, gamma, method = 'all', prev_lscale = 'None'):
+        
+        if method == 'shrunk_only':
+            beta_with_shrinkage = beta_with_shrinkage[np.where(gamma == 0)]
+        
         if bridge_exp == 2:
             return np.ones(beta_with_shrinkage.size)
 
         lscale_sq = .5 / self.rg.tilted_stable(
             bridge_exp / 2, (beta_with_shrinkage / gscale) ** 2
         )
-        lscale = np.sqrt(lscale_sq)
+
+        if method == 'shrunk_only':
+            lscale = prev_lscale
+            lscale[np.where(gamma == 0)] = np.sqrt(lscale_sq)
+        elif method == 'all':
+            lscale = np.sqrt(lscale_sq)
 
         # TODO: Pick the lower and upper bound more carefully.
         if np.any(lscale == 0):

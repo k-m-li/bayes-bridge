@@ -62,7 +62,7 @@ class ConjugateGradientSampler():
         if X.use_cupy: 
             randn_vec_1 = cp.asarray(randn_vec_1)
             randn_vec_2 = cp.asarray(randn_vec_2)
-        if not prior_mean_for_unshrunk is None:
+        if not np.any(prior_mean_for_unshrunk == 0):
             v = X.Tdot(omega ** (1 / 2) * randn_vec_1) \
                 + prior_prec_sqrt * randn_vec_2 \
                 + prior_prec_sqrt**2 * prior_mean_for_unshrunk

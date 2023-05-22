@@ -40,6 +40,11 @@ class RegressionCoefPrior():
             Standard deviation(s) of Gaussian prior(s) on fixed effects.
             If an array, the length must be the same as `n_fixed_effect`.
             `Inf` corresponds to an uninformative flat prior.
+        n_mixture : int
+            Number of predictors -- other than intercept and placed at the
+            first columns of the design matrices --- whose coefficients are 
+            estimated with Gaussian/Bayesian Bridge mixture priors. If "All", 
+            all predictors will be estimated in this manner.
         regularizing_slab_size : float
             Standard deviation of the Gaussian tail-regularizer on
             the bridge prior. Used to impose soft prior constraints on a
@@ -94,10 +99,6 @@ class RegressionCoefPrior():
         if np.isscalar(mean_for_fixed_effect):
             mean_for_fixed_effect = mean_for_fixed_effect * np.ones(n_fixed_effect)
 
-        if n_fixed_effect > 0 and n_mixture > 0:
-            raise ValueError(
-                "Specifying both a fixed effects prior and mixture prior is unsupported."
-            )
         self.mean_for_fixed = mean_for_fixed_effect
         self.sd_for_fixed = sd_for_fixed_effect
         self.slab_size = regularizing_slab_size
