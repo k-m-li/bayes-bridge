@@ -81,16 +81,16 @@ class SparseRegressionCoefficientSampler():
         v = design.Tdot(obs_prec * y)
         mixture_sd = np.zeros(len(gamma))
         mixture_sd[np.where(gamma == 0)] = self.compute_prior_shrunk_scale(gscale, lscale[np.where(gamma == 0)])
-        prior_mean = np.repeat(0., len(prior_sd))
         if 1 in gamma:
-            prior_mean[1:1 + len(self.mean_for_mixture)][np.where(gamma == 1)] = self.mean_for_mixture[np.where(gamma == 1)]
             mixture_sd[np.where(gamma == 1)] = self.sd_for_mixture[np.where(gamma == 1)]
         prior_sd = np.concatenate((self.prior_sd_for_unshrunk, mixture_sd))
 
-        prior_prec_sqrt = 1 / prior_sd
+        prior_mean = np.zeros(len(prior_sd))
+        if 1 in gamma:
+            prior_mean[self.n_unshrunk:self.n_unshrunk + len(self.mean_for_mixture)][np.where(gamma == 1)] = self.mean_for_mixture[np.where(gamma == 1)]
 
-        if not self.prior_mean_for_unshrunk is None:
-            prior_mean[1:1 + len(self.prior_mean_for_unshrunk)] = self.prior_mean_for_unshrunk
+        prior_prec_sqrt = 1 / prior_sd
+        prior_mean[:self.n_unshrunk] = self.prior_mean_for_unshrunk
 
         info = {}
         if method == 'cholesky':

@@ -33,6 +33,10 @@ class BayesBridge():
             self.prior_sd_for_unshrunk = np.concatenate((
                 [prior.sd_for_intercept], self.prior_sd_for_unshrunk
             ))
+            if not np.size(self.prior_mean_for_unshrunk) == 0 :
+                self.prior_mean_for_unshrunk = np.insert(self.prior_mean_for_unshrunk, 0, 0)
+            else:
+                self.prior_mean_for_unshrunk = 0
         self.n_mixture = prior.n_mixture
         if self.n_mixture == 'All':
             self.n_mixture = self.n_pred - self.n_unshrunk
