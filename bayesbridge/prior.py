@@ -16,6 +16,7 @@ class RegressionCoefPrior():
             n_mixture = 0,
             sd_for_mixture = float('inf'),
             mean_for_mixture = float('inf'),
+            q_for_mixture = 0.5,
             regularizing_slab_size=float('inf'),
             global_scale_prior_hyper_param=None,
             _global_scale_parametrization='coef_magnitude'
@@ -108,6 +109,7 @@ class RegressionCoefPrior():
         self.mean_for_mixture = mean_for_mixture
         self.n_mixture = n_mixture
         self.sd_for_mixture = sd_for_mixture
+        self.q_for_mixture = q_for_mixture
         if global_scale_prior_hyper_param is None:
             self.param = {
                 'gscale_neg_power': {'shape': 0., 'rate': 0.},

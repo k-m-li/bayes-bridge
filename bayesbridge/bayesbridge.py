@@ -250,7 +250,7 @@ class BayesBridge():
                 method = options.lscale_update, prev_lscale = lscale)
             
             if self.n_mixture > 0: 
-                gamma[:self.n_mixture] = self.update_gamma(coef[self.n_unshrunk:self.n_mixture + self.n_unshrunk], gscale, lscale)
+                gamma[:self.n_mixture] = self.update_gamma(coef[self.n_unshrunk:self.n_mixture + self.n_unshrunk], gscale, lscale, self.prior.q_for_mixture)
 
             logp = self.compute_posterior_logprob(
                 coef, gscale, obs_prec, self.prior.bridge_exp
@@ -482,10 +482,10 @@ class BayesBridge():
         return gscale
 
     def update_gamma(
-            self, beta, gscale, lscale):
+            self, beta, gscale, lscale, q = 0.5):
         sd_unshrunk = self.reg_coef_sampler.compute_prior_shrunk_scale(gscale, lscale[:self.n_mixture])
-        a = norm(self.mean_for_mixture, self.sd_for_mixture).pdf(beta)
-        b = norm(0, sd_unshrunk).pdf(beta)
+        a = q * norm(self.mean_for_mixture, self.sd_for_mixture).pdf(beta)
+        b = (1 - q) * norm(0, sd_unshrunk).pdf(beta)
         p = a/(a + b)
         for i in range(len(p)):
             if a[i] + b[i] == 0:
