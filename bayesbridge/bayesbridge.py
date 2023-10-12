@@ -489,7 +489,7 @@ class BayesBridge():
         p = a/(a + b)
         for i in range(len(p)):
             if a[i] + b[i] == 0:
-                p[i] = 0
+                p[i] = q
         gamma = bernoulli.rvs(p)
         return(gamma)
 
