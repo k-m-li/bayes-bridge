@@ -251,8 +251,9 @@ class BayesBridge():
                 method = options.lscale_update, prev_lscale = lscale)
             
             if self.n_mixture > 0: 
-                if type(self.prior.q_for_mixture) is tuple:
-                    a, b = self.prior.q_for_mixture
+                if isinstance(self.prior.q_for_mixture, list):
+                    a = self.prior.q_for_mixture[0]
+                    b = self.prior.q_for_mixture[1]
                     q = random.betavariate(a,b)
                 else:
                     q = self.prior.q_for_mixture
