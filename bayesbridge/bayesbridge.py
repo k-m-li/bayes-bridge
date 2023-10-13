@@ -1,6 +1,7 @@
 import numpy as np
 import math
 import time
+import random
 from scipy.stats import bernoulli
 from scipy.stats import norm
 from .util import simplify_warnings # Monkey patch the warning format
@@ -250,7 +251,12 @@ class BayesBridge():
                 method = options.lscale_update, prev_lscale = lscale)
             
             if self.n_mixture > 0: 
-                gamma[:self.n_mixture] = self.update_gamma(coef[self.n_unshrunk:self.n_mixture + self.n_unshrunk], gscale, lscale, self.prior.q_for_mixture)
+                if type(self.prior.q_for_mixture) is tuple:
+                    a, b = self.prior.q_for_mixture
+                    q = random.betavariate(a,b)
+                else:
+                    q = self.prior.q_for_mixture
+                gamma[:self.n_mixture] = self.update_gamma(coef[self.n_unshrunk:self.n_mixture + self.n_unshrunk], gscale, lscale, q)
 
             logp = self.compute_posterior_logprob(
                 coef, gscale, obs_prec, self.prior.bridge_exp
@@ -487,6 +493,7 @@ class BayesBridge():
         a = q * norm(self.mean_for_mixture, self.sd_for_mixture).pdf(beta)
         b = (1 - q) * norm(0, sd_unshrunk).pdf(beta)
         p = a/(a + b)
+
         for i in range(len(p)):
             if a[i] + b[i] == 0:
                 p[i] = q
