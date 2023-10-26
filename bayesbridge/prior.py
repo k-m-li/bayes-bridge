@@ -103,7 +103,7 @@ class RegressionCoefPrior():
         self.mean_for_fixed = mean_for_fixed_effect
         self.sd_for_fixed = sd_for_fixed_effect
         self.slab_size = regularizing_slab_size
-        self.n_fixed = n_fixed_effect
+        self.n_fixed_effect = n_fixed_effect
         self.bridge_exp = bridge_exponent
         self._gscale_paramet = _global_scale_parametrization
         self.mean_for_mixture = mean_for_mixture

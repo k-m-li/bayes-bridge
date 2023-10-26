@@ -20,9 +20,10 @@ except (ImportError, ModuleNotFoundError) as e:
 class SparseRegressionCoefficientSampler():
 
     def __init__(self, n_coef, prior_sd_for_unshrunk, prior_mean_for_unshrunk, 
-                 sampling_method, sd_for_mixture = None, mean_for_mixture = None, 
+                 sampling_method, 
                  stability_estimate_stabilized=False,
-                 regularizing_slab_size=float('inf')):
+                 regularizing_slab_size=float('inf'),
+                 sd_for_mixture = None, mean_for_mixture = None):
 
         self.prior_sd_for_unshrunk = prior_sd_for_unshrunk
         self.prior_mean_for_unshrunk = prior_mean_for_unshrunk
@@ -79,14 +80,15 @@ class SparseRegressionCoefficientSampler():
             obs_prec = cp.asarray(obs_prec)
             y = cp.asarray(y)
         v = design.Tdot(obs_prec * y)
+
         mixture_sd = np.zeros(len(gamma))
         mixture_sd[np.where(gamma == 0)] = self.compute_prior_shrunk_scale(gscale, lscale[np.where(gamma == 0)])
-        if 1 in gamma:
+        if self.sd_for_mixture is not None:
             mixture_sd[np.where(gamma == 1)] = self.sd_for_mixture[np.where(gamma == 1)]
         prior_sd = np.concatenate((self.prior_sd_for_unshrunk, mixture_sd))
 
         prior_mean = np.zeros(len(prior_sd))
-        if 1 in gamma:
+        if self.mean_for_mixture is not None:
             prior_mean[self.n_unshrunk:self.n_unshrunk + len(self.mean_for_mixture)][np.where(gamma == 1)] = self.mean_for_mixture[np.where(gamma == 1)]
 
         prior_prec_sqrt = 1 / prior_sd

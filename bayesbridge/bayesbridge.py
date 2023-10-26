@@ -26,7 +26,7 @@ class BayesBridge():
 
         self.n_obs = model.n_obs
         self.n_pred = model.n_pred
-        self.n_unshrunk = prior.n_fixed
+        self.n_unshrunk = prior.n_fixed_effect
         self.prior_sd_for_unshrunk = prior.sd_for_fixed.copy()
         self.prior_mean_for_unshrunk = prior.mean_for_fixed.copy()
         if model.intercept_added:
@@ -196,14 +196,14 @@ class BayesBridge():
                 self.reg_coef_sampler = SparseRegressionCoefficientSampler(
                     self.n_pred, self.prior_sd_for_unshrunk, self.prior_mean_for_unshrunk,
                     options.coef_sampler_type, 
-                    self.sd_for_mixture, self.mean_for_mixture,
                     options.curvature_est_stabilized,
-                    self.prior.slab_size
+                    self.prior.slab_size,
+                    self.sd_for_mixture, self.mean_for_mixture,
                 )
             else:
                 self.reg_coef_sampler = SparseRegressionCoefficientSampler(
                     self.n_pred, self.prior_sd_for_unshrunk, self.prior_mean_for_unshrunk,
-                    options.coef_sampler_type,
+                    options.coef_sampler_type, 
                     options.curvature_est_stabilized,
                     self.prior.slab_size
                 )
@@ -497,6 +497,7 @@ class BayesBridge():
         log_p = log_a - np.logaddexp(log_a, log_b)
         p = np.exp(log_p)
         gamma = bernoulli.rvs(p)
+        gamma = gamma.astype(int)
         return(gamma)
     
     def update_q(
