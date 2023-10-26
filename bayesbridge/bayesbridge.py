@@ -250,13 +250,12 @@ class BayesBridge():
                 gscale, coef[self.n_unshrunk:], self.prior.bridge_exp, gamma,
                 method = options.lscale_update, prev_lscale = lscale)
             
-            if self.n_mixture > 0: 
+            if self.n_mixture > 0:
                 if isinstance(self.prior.q_for_mixture, list):
-                    a = self.prior.q_for_mixture[0]
-                    b = self.prior.q_for_mixture[1]
-                    q = random.betavariate(a,b)
+                    q = self.update_q(self.prior.q_for_mixture, gamma)
                 else:
                     q = self.prior.q_for_mixture
+            
                 gamma[:self.n_mixture] = self.update_gamma(coef[self.n_unshrunk:self.n_mixture + self.n_unshrunk], gscale, lscale, q)
 
             logp = self.compute_posterior_logprob(
@@ -489,17 +488,28 @@ class BayesBridge():
         return gscale
 
     def update_gamma(
-            self, beta, gscale, lscale, q = 0.5):
-        sd_unshrunk = self.reg_coef_sampler.compute_prior_shrunk_scale(gscale, lscale[:self.n_mixture])
-        a = q * norm(self.mean_for_mixture, self.sd_for_mixture).pdf(beta)
-        b = (1 - q) * norm(0, sd_unshrunk).pdf(beta)
-        p = a/(a + b)
-
-        for i in range(len(p)):
-            if a[i] + b[i] == 0:
-                p[i] = q
+            self, beta, gscale, lscale, q):
+        sd_null = self.reg_coef_sampler.compute_prior_shrunk_scale(gscale, lscale[:self.n_mixture])
+        log_a = np.log(q) + \
+                norm.logpdf(beta, self.mean_for_mixture, self.sd_for_mixture)
+        log_b = np.log(1 - q) + \
+                norm.logpdf(beta, loc=0, scale=sd_null)
+        log_p = log_a - np.logaddexp(log_a, log_b)
+        p = np.exp(log_p)
         gamma = bernoulli.rvs(p)
         return(gamma)
+    
+    def update_q(
+            self, q_prior, gamma):
+            if isinstance(self.prior.q_for_mixture, list):
+                a = self.prior.q_for_mixture[0]
+                b = self.prior.q_for_mixture[1]
+                s = np.sum(gamma)
+                f = len(gamma) - s
+                q = random.betavariate(a + s,b + f)
+            else:
+                q = self.prior.q_for_mixture
+            return(q)
 
     def monte_carlo_em_global_scale(
             self, beta_with_shrinkage, bridge_exp):
