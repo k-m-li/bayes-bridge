@@ -38,9 +38,10 @@ class BayesBridge():
                 self.prior_mean_for_unshrunk = np.insert(self.prior_mean_for_unshrunk, 0, 0)
             else:
                 self.prior_mean_for_unshrunk = 0
-        self.n_mixture = prior.n_mixture
-        if self.n_mixture == 'All':
-            self.n_mixture = self.n_pred - self.n_unshrunk
+        if not np.any(np.isinf(prior.mean_for_mixture)):
+            self.n_mixture = len(prior.mean_for_mixture)
+        else:
+            self.n_mixture = 0
         if self.n_mixture > 0:
             self.sd_for_mixture = prior.sd_for_mixture.copy()
             self.mean_for_mixture = prior.mean_for_mixture.copy()
@@ -219,7 +220,7 @@ class BayesBridge():
         self.manager.stamp_time(start_time)
 
         # Initial state of the Markov chain
-        coef, obs_prec, lscale, gscale, gamma, init, initial_optim_info = \
+        coef, obs_prec, lscale, gscale, gamma, gamma_with_mixture, init, initial_optim_info = \
             self.initialize_chain(init, self.prior.bridge_exp)
 
         # Pre-allocate
@@ -234,7 +235,7 @@ class BayesBridge():
         for mcmc_iter in range(1, n_iter + 1):
 
             coef, info = self.update_regress_coef(
-                coef, obs_prec, gscale, lscale, gamma, options.coef_sampler_type
+                coef, obs_prec, gscale, lscale, gamma, gamma_with_mixture, options.coef_sampler_type
             )    
 
             obs_prec = self.update_obs_precision(coef)
@@ -251,12 +252,13 @@ class BayesBridge():
                 method = options.lscale_update, prev_lscale = lscale)
             
             if self.n_mixture > 0:
-                if isinstance(self.prior.q_for_mixture, list):
-                    q = self.update_q(self.prior.q_for_mixture, gamma)
-                else:
-                    q = self.prior.q_for_mixture
+                if len(self.prior.q_for_mixture) == 2:
+                    q = self.update_q(self.prior.q_for_mixture, gamma, gamma_with_mixture)
+                elif len(self.prior.q_for_mixture) == 1:
+                    q = self.prior.q_for_mixture[0]
             
-                gamma[:self.n_mixture] = self.update_gamma(coef[self.n_unshrunk:self.n_mixture + self.n_unshrunk], gscale, lscale, q)
+                gamma = self.update_gamma(coef[self.n_unshrunk:], gamma, gamma_with_mixture, 
+                                          gscale, lscale, q)
 
             logp = self.compute_posterior_logprob(
                 coef, gscale, obs_prec, self.prior.bridge_exp
@@ -314,7 +316,7 @@ class BayesBridge():
         """ Choose the user-specified state if provided, the default ones otherwise."""
 
         valid_param_name \
-            = ('coef', 'local_scale', 'global_scale', 'obs_prec', 'logp', 'gamma')
+            = ('coef', 'local_scale', 'global_scale', 'obs_prec', 'logp', 'gamma', 'gamma_with_mixture')
         for key in init:
             if key not in valid_param_name:
                 warn("'{:s}' is not a valid parameter name and "
@@ -333,10 +335,16 @@ class BayesBridge():
 
         obs_prec = self.initialize_obs_precision(init, coef)
 
-        if 'gamma' in init:
-                gamma = init['gamma'].copy()
+        if 'gamma_with_mixture' in init:
+            gamma_with_mixture = init['gamma_with_mixture'].copy()
         else:
-                gamma = np.zeros(self.n_pred-self.n_unshrunk)
+            gamma_with_mixture = np.zeros(self.n_pred-self.n_unshrunk)
+            gamma_with_mixture[:self.n_mixture] = 1
+
+        if 'gamma' in init:
+            gamma = init['gamma'].copy()
+        else:
+            gamma = (gamma_with_mixture) * bernoulli.rvs(0.5, size = len(gamma_with_mixture))
 
         if coef_only_specified:
             gscale = self.update_global_scale(
@@ -387,10 +395,11 @@ class BayesBridge():
             'obs_prec': obs_prec,
             'local_scale': lscale,
             'global_scale': gscale,
-            'gamma': gamma
+            'gamma': gamma,
+            'gamma_with_mixture': gamma_with_mixture
         }
 
-        return coef, obs_prec, lscale, gscale, gamma, init, optim_info
+        return coef, obs_prec, lscale, gscale, gamma, gamma_with_mixture, init, optim_info
 
     def initialize_obs_precision(self, init, coef):
         if 'obs_prec' in init:
@@ -409,7 +418,7 @@ class BayesBridge():
             obs_prec = None
         return obs_prec
 
-    def update_regress_coef(self, coef, obs_prec, gscale, lscale, gamma, sampling_method):
+    def update_regress_coef(self, coef, obs_prec, gscale, lscale, gamma, gamma_with_mixture, sampling_method):
 
         if sampling_method in ('cholesky', 'cg'):
 
@@ -420,7 +429,7 @@ class BayesBridge():
                 y_gaussian = (self.model.n_success - self.model.n_trial / 2) / obs_prec
 
             coef, info = self.reg_coef_sampler.sample_gaussian_posterior(
-                y_gaussian, self.model.design, obs_prec, gscale, lscale, gamma,
+                y_gaussian, self.model.design, obs_prec, gscale, lscale, gamma, gamma_with_mixture,
                 sampling_method
             )
 
@@ -488,28 +497,27 @@ class BayesBridge():
         return gscale
 
     def update_gamma(
-            self, beta, gscale, lscale, q):
-        sd_null = self.reg_coef_sampler.compute_prior_shrunk_scale(gscale, lscale[:self.n_mixture])
+            self, beta, gamma, gamma_with_mixture, gscale, lscale, q):
+        beta_with_mixture = beta[np.where(gamma_with_mixture == 1)]
+        lscale_with_mixture = lscale[np.where(gamma_with_mixture == 1)]
+        sd_null = self.reg_coef_sampler.compute_prior_shrunk_scale(gscale, lscale_with_mixture)
         log_a = np.log(q) + \
-                norm.logpdf(beta, self.mean_for_mixture, self.sd_for_mixture)
+                norm.logpdf(beta_with_mixture, self.mean_for_mixture, self.sd_for_mixture)
         log_b = np.log(1 - q) + \
-                norm.logpdf(beta, loc=0, scale=sd_null)
+                norm.logpdf(beta_with_mixture, loc=0, scale=sd_null)
         log_p = log_a - np.logaddexp(log_a, log_b)
         p = np.exp(log_p)
-        gamma = bernoulli.rvs(p)
-        gamma = gamma.astype(int)
+        prop_gamma = bernoulli.rvs(p)
+        gamma[np.where(gamma_with_mixture == 1)] = prop_gamma
         return(gamma)
     
     def update_q(
-            self, q_prior, gamma):
-            if isinstance(self.prior.q_for_mixture, list):
-                a = self.prior.q_for_mixture[0]
-                b = self.prior.q_for_mixture[1]
-                s = np.sum(gamma)
-                f = len(gamma) - s
-                q = random.betavariate(a + s,b + f)
-            else:
-                q = self.prior.q_for_mixture
+            self, q_prior, gamma, gamma_with_mixture):
+            a = self.prior.q_for_mixture[0]
+            b = self.prior.q_for_mixture[1]
+            s = np.sum(gamma)
+            f = sum(gamma_with_mixture) - s
+            q = random.betavariate(a + s,b + f)
             return(q)
 
     def monte_carlo_em_global_scale(

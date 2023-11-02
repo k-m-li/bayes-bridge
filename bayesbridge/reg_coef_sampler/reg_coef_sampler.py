@@ -63,7 +63,7 @@ class SparseRegressionCoefficientSampler():
                 setattr(self, attr, state[attr])
 
     def sample_gaussian_posterior(
-            self, y, design, obs_prec, gscale, lscale, gamma = None, method='cg'):
+            self, y, design, obs_prec, gscale, lscale, gamma, gamma_with_mixture, method='cg'):
         """
         Parameters
         ----------
@@ -81,18 +81,19 @@ class SparseRegressionCoefficientSampler():
             y = cp.asarray(y)
         v = design.Tdot(obs_prec * y)
 
-        mixture_sd = np.zeros(len(gamma))
-        mixture_sd[np.where(gamma == 0)] = self.compute_prior_shrunk_scale(gscale, lscale[np.where(gamma == 0)])
+        sd_for_mixture = np.zeros(len(gamma_with_mixture))
+        mean_for_mixture = np.zeros(len(gamma_with_mixture))
+        
         if self.sd_for_mixture is not None:
-            mixture_sd[np.where(gamma == 1)] = self.sd_for_mixture[np.where(gamma == 1)]
-        prior_sd = np.concatenate((self.prior_sd_for_unshrunk, mixture_sd))
+            sd_for_mixture[np.where(gamma_with_mixture == 1)] = self.sd_for_mixture
+            mean_for_mixture[np.where(gamma_with_mixture == 1)] = self.mean_for_mixture
 
-        prior_mean = np.zeros(len(prior_sd))
-        if self.mean_for_mixture is not None:
-            prior_mean[self.n_unshrunk:self.n_unshrunk + len(self.mean_for_mixture)][np.where(gamma == 1)] = self.mean_for_mixture[np.where(gamma == 1)]
-
+        prior_sd = (1-gamma) * self.compute_prior_shrunk_scale(gscale, lscale) + gamma * sd_for_mixture
+        prior_sd = np.concatenate((self.prior_sd_for_unshrunk, prior_sd))
         prior_prec_sqrt = 1 / prior_sd
-        prior_mean[:self.n_unshrunk] = self.prior_mean_for_unshrunk
+
+        prior_mean = gamma * mean_for_mixture
+        prior_mean = np.concatenate((self.prior_mean_for_unshrunk, prior_mean))
 
         info = {}
         if method == 'cholesky':

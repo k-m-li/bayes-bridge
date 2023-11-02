@@ -13,10 +13,9 @@ class RegressionCoefPrior():
             sd_for_intercept=float('inf'),
             sd_for_fixed_effect=float('inf'),
             mean_for_fixed_effect=float('inf'),
-            n_mixture = 0,
             sd_for_mixture = float('inf'),
             mean_for_mixture = float('inf'),
-            q_for_mixture = 0.5,
+            q_for_mixture = [1,1],
             regularizing_slab_size=float('inf'),
             global_scale_prior_hyper_param=None,
             _global_scale_parametrization='coef_magnitude'
@@ -41,11 +40,6 @@ class RegressionCoefPrior():
             Standard deviation(s) of Gaussian prior(s) on fixed effects.
             If an array, the length must be the same as `n_fixed_effect`.
             `Inf` corresponds to an uninformative flat prior.
-        n_mixture : int
-            Number of predictors -- other than intercept and placed at the
-            first columns of the design matrices --- whose coefficients are 
-            estimated with Gaussian/Bayesian Bridge mixture priors. If "All", 
-            all predictors will be estimated in this manner.
         regularizing_slab_size : float
             Standard deviation of the Gaussian tail-regularizer on
             the bridge prior. Used to impose soft prior constraints on a
@@ -100,6 +94,9 @@ class RegressionCoefPrior():
         if np.isscalar(mean_for_fixed_effect):
             mean_for_fixed_effect = mean_for_fixed_effect * np.ones(n_fixed_effect)
 
+        if not (len(q_for_mixture) == 1 or len(q_for_mixture) == 2):
+            raise ValueError("q for mixture prior should be an array of length 1 (fixed) or 2 (beta parameters).")
+
         self.mean_for_fixed = mean_for_fixed_effect
         self.sd_for_fixed = sd_for_fixed_effect
         self.slab_size = regularizing_slab_size
@@ -107,7 +104,6 @@ class RegressionCoefPrior():
         self.bridge_exp = bridge_exponent
         self._gscale_paramet = _global_scale_parametrization
         self.mean_for_mixture = mean_for_mixture
-        self.n_mixture = n_mixture
         self.sd_for_mixture = sd_for_mixture
         self.q_for_mixture = q_for_mixture
         if global_scale_prior_hyper_param is None:
