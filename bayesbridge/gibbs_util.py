@@ -149,6 +149,9 @@ class MarkovChainManager():
         if 'gamma' in params_to_save:
             samples['gamma'] = np.zeros((self.n_pred - self.n_unshrunk, n_sample))
 
+        if 'q' in params_to_save:
+            samples['q'] = np.zeros(n_sample)
+
         for key in self.get_sampling_info_keys(sampling_method):
             sampling_info[key] = np.zeros(n_sample)
 
@@ -171,7 +174,7 @@ class MarkovChainManager():
 
     def store_current_state(
             self, samples, mcmc_iter, n_burnin, thin, coef, lscale,
-            gscale, obs_prec, gamma, logp, params_to_save):
+            gscale, obs_prec, gamma, q, logp, params_to_save):
 
         if mcmc_iter <= n_burnin or (mcmc_iter - n_burnin) % thin != 0:
             return
@@ -198,6 +201,9 @@ class MarkovChainManager():
 
         if 'gamma' in params_to_save:
             samples['gamma'][:, index] = gamma
+
+        if 'q' in params_to_save:
+            samples['q'][index] = q
 
     def store_sampling_info(
             self, sampling_info, info, mcmc_iter, n_burnin, thin, sampling_method):

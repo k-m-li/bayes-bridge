@@ -256,9 +256,10 @@ class BayesBridge():
                     q = self.update_q(self.prior.q_for_mixture, gamma, gamma_with_mixture)
                 elif len(self.prior.q_for_mixture) == 1:
                     q = self.prior.q_for_mixture[0]
-            
                 gamma = self.update_gamma(coef[self.n_unshrunk:], gamma, gamma_with_mixture, 
                                           gscale, lscale, q)
+            else:
+                q = 0
 
             logp = self.compute_posterior_logprob(
                 coef, gscale, obs_prec, self.prior.bridge_exp
@@ -266,7 +267,7 @@ class BayesBridge():
 
             self.manager.store_current_state(
                 samples, mcmc_iter, n_burnin, thin, coef, lscale, gscale,
-                obs_prec, gamma, logp, params_to_save
+                obs_prec, gamma, q, logp, params_to_save
             )
             self.manager.store_sampling_info(
                 sampling_info, info, mcmc_iter, n_burnin, thin,
