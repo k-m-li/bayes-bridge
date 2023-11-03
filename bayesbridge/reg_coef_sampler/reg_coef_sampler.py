@@ -93,7 +93,10 @@ class SparseRegressionCoefficientSampler():
         prior_prec_sqrt = 1 / prior_sd
 
         prior_mean = gamma * mean_for_mixture
-        prior_mean = np.concatenate((self.prior_mean_for_unshrunk, prior_mean))
+        if self.prior_mean_for_unshrunk == 0:
+            prior_mean = np.insert(prior_mean, 0, 0)
+        else:
+            prior_mean = np.concatenate((self.prior_mean_for_unshrunk, prior_mean))
 
         info = {}
         if method == 'cholesky':
