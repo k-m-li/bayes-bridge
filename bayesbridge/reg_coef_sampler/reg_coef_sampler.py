@@ -93,7 +93,7 @@ class SparseRegressionCoefficientSampler():
         prior_prec_sqrt = 1 / prior_sd
 
         prior_mean = gamma * mean_for_mixture
-        if self.prior_mean_for_unshrunk == 0:
+        if np.isscalar(self.prior_mean_for_unshrunk):
             prior_mean = np.insert(prior_mean, 0, 0)
         else:
             prior_mean = np.concatenate((self.prior_mean_for_unshrunk, prior_mean))
