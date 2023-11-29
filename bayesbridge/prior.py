@@ -15,7 +15,6 @@ class RegressionCoefPrior():
             mean_for_fixed_effect=float('inf'),
             sd_for_mixture = float('inf'),
             mean_for_mixture = float('inf'),
-            q_for_mixture = [1,1],
             regularizing_slab_size=float('inf'),
             global_scale_prior_hyper_param=None,
             _global_scale_parametrization='coef_magnitude'
@@ -94,9 +93,6 @@ class RegressionCoefPrior():
         if np.isscalar(mean_for_fixed_effect):
             mean_for_fixed_effect = mean_for_fixed_effect * np.ones(n_fixed_effect)
 
-        if not (len(q_for_mixture) == 1 or len(q_for_mixture) == 2):
-            raise ValueError("q for mixture prior should be an array of length 1 (fixed) or 2 (beta parameters).")
-
         self.mean_for_fixed = mean_for_fixed_effect
         self.sd_for_fixed = sd_for_fixed_effect
         self.slab_size = regularizing_slab_size
@@ -105,7 +101,7 @@ class RegressionCoefPrior():
         self._gscale_paramet = _global_scale_parametrization
         self.mean_for_mixture = mean_for_mixture
         self.sd_for_mixture = sd_for_mixture
-        self.q_for_mixture = q_for_mixture
+        
         if global_scale_prior_hyper_param is None:
             self.param = {
                 'gscale_neg_power': {'shape': 0., 'rate': 0.},

@@ -9,6 +9,7 @@ class SamplerOptions():
     def __init__(self, coef_sampler_type,
                  global_scale_update='sample',
                  local_scale_update = 'all',
+                 q_update = 'hierarchical',
                  hmc_curvature_est_stabilized=False):
         """
         Parameters
@@ -21,9 +22,12 @@ class SamplerOptions():
             raise ValueError("Unsupported regression coefficient sampler.")
         if local_scale_update not in ('all', 'shrunk_only', 'None'):
             raise ValueError("Unsupported sampling option for local scale update.")
+        if q_update not in ('fixed', 'simple', 'hierarchical'):
+            raise ValueError("Unsupported sampling option for q update.")
         self.coef_sampler_type = coef_sampler_type
         self.gscale_update = global_scale_update
         self.lscale_update = local_scale_update
+        self.q_update = q_update
         self.curvature_est_stabilized = hmc_curvature_est_stabilized
 
     def get_info(self):
@@ -150,7 +154,13 @@ class MarkovChainManager():
             samples['gamma'] = np.zeros((self.n_pred - self.n_unshrunk, n_sample))
 
         if 'q' in params_to_save:
-            samples['q'] = np.zeros(n_sample)
+            samples['q'] = np.zeros((self.n_pred - self.n_unshrunk, n_sample))
+
+        if 'alpha' in params_to_save:
+            samples['alpha'] = np.zeros(n_sample)
+        
+        if 'beta' in params_to_save:
+            samples['beta'] = np.zeros(n_sample)
 
         for key in self.get_sampling_info_keys(sampling_method):
             sampling_info[key] = np.zeros(n_sample)
@@ -174,7 +184,7 @@ class MarkovChainManager():
 
     def store_current_state(
             self, samples, mcmc_iter, n_burnin, thin, coef, lscale,
-            gscale, obs_prec, gamma, q, logp, params_to_save):
+            gscale, obs_prec, gamma, q, alpha, beta, logp, params_to_save):
 
         if mcmc_iter <= n_burnin or (mcmc_iter - n_burnin) % thin != 0:
             return
@@ -203,7 +213,13 @@ class MarkovChainManager():
             samples['gamma'][:, index] = gamma
 
         if 'q' in params_to_save:
-            samples['q'][index] = q
+            samples['q'][:, index] = q
+
+        if 'alpha' in params_to_save:
+            samples['alpha'][index] = alpha
+
+        if 'beta' in params_to_save:
+            samples['beta'][index] = beta
 
     def store_sampling_info(
             self, sampling_info, info, mcmc_iter, n_burnin, thin, sampling_method):

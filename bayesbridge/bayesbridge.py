@@ -4,6 +4,7 @@ import time
 import random
 from scipy.stats import bernoulli
 from scipy.stats import norm
+from scipy.special import gammaln
 from .util import simplify_warnings # Monkey patch the warning format
 from warnings import warn
 from .random import BasicRandom
@@ -210,7 +211,7 @@ class BayesBridge():
                 )
         if params_to_save == 'all':
             params_to_save = (
-                'coef', 'local_scale', 'global_scale', 'logp'
+                'coef', 'local_scale', 'global_scale', 'logp', 'q'
             )
             if self.model.name != 'cox':
                 params_to_save += ('obs_prec', )
@@ -220,7 +221,7 @@ class BayesBridge():
         self.manager.stamp_time(start_time)
 
         # Initial state of the Markov chain
-        coef, obs_prec, lscale, gscale, gamma, gamma_with_mixture, init, initial_optim_info = \
+        coef, obs_prec, lscale, gscale, gamma, gamma_with_mixture, q, alpha, beta, lmbda, init, initial_optim_info = \
             self.initialize_chain(init, self.prior.bridge_exp)
 
         # Pre-allocate
@@ -252,10 +253,10 @@ class BayesBridge():
                 method = options.lscale_update, prev_lscale = lscale)
             
             if self.n_mixture > 0:
-                if len(self.prior.q_for_mixture) == 2:
-                    q = self.update_q(self.prior.q_for_mixture, gamma, gamma_with_mixture)
-                elif len(self.prior.q_for_mixture) == 1:
-                    q = self.prior.q_for_mixture[0]
+                if options.q_update == 'hierarchical':
+                    alpha = self.update_alpha(alpha, beta, q, lmbda)
+                    beta = self.update_beta(alpha, beta, q, lmbda)
+                q = self.update_q(q, alpha, beta, gamma, gamma_with_mixture, method = options.q_update)
                 gamma = self.update_gamma(coef[self.n_unshrunk:], gamma, gamma_with_mixture, 
                                           gscale, lscale, q)
             else:
@@ -267,7 +268,7 @@ class BayesBridge():
 
             self.manager.store_current_state(
                 samples, mcmc_iter, n_burnin, thin, coef, lscale, gscale,
-                obs_prec, gamma, q, logp, params_to_save
+                obs_prec, gamma, q, alpha, beta, logp, params_to_save
             )
             self.manager.store_sampling_info(
                 sampling_info, info, mcmc_iter, n_burnin, thin,
@@ -317,7 +318,7 @@ class BayesBridge():
         """ Choose the user-specified state if provided, the default ones otherwise."""
 
         valid_param_name \
-            = ('coef', 'local_scale', 'global_scale', 'obs_prec', 'logp', 'gamma', 'gamma_with_mixture')
+            = ('coef', 'local_scale', 'global_scale', 'obs_prec', 'logp', 'gamma', 'gamma_with_mixture', 'q', 'alpha', 'beta', 'lmbda')
         for key in init:
             if key not in valid_param_name:
                 warn("'{:s}' is not a valid parameter name and "
@@ -346,6 +347,26 @@ class BayesBridge():
             gamma = init['gamma'].copy()
         else:
             gamma = (gamma_with_mixture) * bernoulli.rvs(0.5, size = len(gamma_with_mixture))
+            
+        if 'q' in init:
+            q = init['q'].copy()
+        else:
+            q = np.full(len(gamma), 0.5)
+
+        if 'alpha' in init:
+            alpha = init['alpha'].copy()
+        else:
+            alpha = 1
+
+        if 'beta' in init:
+            beta = init['beta'].copy()
+        else:
+            beta = 1
+
+        if 'lmbda' in init:
+            lmbda = init['lmbda'].copy()
+        else:
+            lmbda = 0.7
 
         if coef_only_specified:
             gscale = self.update_global_scale(
@@ -397,10 +418,14 @@ class BayesBridge():
             'local_scale': lscale,
             'global_scale': gscale,
             'gamma': gamma,
-            'gamma_with_mixture': gamma_with_mixture
+            'gamma_with_mixture': gamma_with_mixture,
+            'q': q,
+            'alpha': alpha,
+            'beta': beta,
+            'lmbda': lmbda
         }
 
-        return coef, obs_prec, lscale, gscale, gamma, gamma_with_mixture, init, optim_info
+        return coef, obs_prec, lscale, gscale, gamma, gamma_with_mixture, q, alpha, beta, lmbda, init, optim_info
 
     def initialize_obs_precision(self, init, coef):
         if 'obs_prec' in init:
@@ -501,10 +526,11 @@ class BayesBridge():
             self, beta, gamma, gamma_with_mixture, gscale, lscale, q):
         beta_with_mixture = beta[np.where(gamma_with_mixture == 1)]
         lscale_with_mixture = lscale[np.where(gamma_with_mixture == 1)]
+        q_with_mixture = q[np.where(gamma_with_mixture == 1)]
         sd_null = self.reg_coef_sampler.compute_prior_shrunk_scale(gscale, lscale_with_mixture)
-        log_a = np.log(q) + \
+        log_a = np.log(q_with_mixture) + \
                 norm.logpdf(beta_with_mixture, self.mean_for_mixture, self.sd_for_mixture)
-        log_b = np.log(1 - q) + \
+        log_b = np.log(1 - q_with_mixture) + \
                 norm.logpdf(beta_with_mixture, loc=0, scale=sd_null)
         log_p = log_a - np.logaddexp(log_a, log_b)
         p = np.exp(log_p)
@@ -513,13 +539,49 @@ class BayesBridge():
         return(gamma)
     
     def update_q(
-            self, q_prior, gamma, gamma_with_mixture):
-            a = self.prior.q_for_mixture[0]
-            b = self.prior.q_for_mixture[1]
-            s = np.sum(gamma)
-            f = sum(gamma_with_mixture) - s
-            q = random.betavariate(a + s,b + f)
-            return(q)
+            self, q, alpha, beta, gamma, gamma_with_mixture, method):
+            if method == 'simple':
+                s = np.sum(gamma)
+                f = sum(gamma_with_mixture) - s
+                q = np.random.beta(alpha + s,beta + f, size = 1)
+                q = np.full(len(gamma), q)
+            if method == 'hierarchical':
+                q = np.random.beta(alpha + gamma, beta + 1 - gamma, size = len(gamma))
+            return q
+    
+    def log_alpha_beta_prior(self, alpha, beta):
+            return -2.5 * np.log(alpha + beta)
+
+    def get_mh_prop(self, current, lmbda):
+            return current * np.exp(lmbda * (np.random.uniform() - 0.5))
+    
+    def update_alpha(self, alpha, beta, q, lmbda):
+        alpha_star = self.get_mh_prop(alpha, lmbda)
+        
+        num = len(q) * (gammaln(alpha_star + beta) - gammaln(alpha_star)) + alpha_star * np.sum(np.log(q)) + \
+            self.log_alpha_beta_prior(alpha_star, beta) - np.log(alpha)
+
+        den = len(q) * (gammaln(alpha + beta) - gammaln(alpha)) + alpha * np.sum(np.log(q)) + \
+            self.log_alpha_beta_prior(alpha, beta) - np.log(alpha_star)
+
+        if (np.log(np.random.uniform()) <= num - den):
+            alpha = alpha_star
+
+        return alpha
+
+    def update_beta(self, alpha, beta, q, lmbda):
+        beta_star = self.get_mh_prop(beta, lmbda)
+
+        num = len(q) * (gammaln(alpha + beta_star) - gammaln(beta_star)) + beta_star * np.sum(np.log(1 - q)) + \
+            self.log_alpha_beta_prior(alpha, beta_star) - np.log(beta)
+
+        den = len(q) * (gammaln(alpha + beta) - gammaln(beta)) + beta * np.sum(np.log(1 - q)) + \
+            self.log_alpha_beta_prior(alpha, beta) - np.log(beta_star)
+
+        if (np.log(np.random.uniform()) <= num - den):
+            beta = beta_star
+
+        return beta
 
     def monte_carlo_em_global_scale(
             self, beta_with_shrinkage, bridge_exp):
