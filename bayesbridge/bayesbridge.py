@@ -349,17 +349,20 @@ class BayesBridge():
             gamma = (gamma_with_mixture) * bernoulli.rvs(0.5, size = len(gamma_with_mixture))
             
         if 'q' in init:
-            q = init['q'].copy()
+            if hasattr(init['q'], "__len__"):
+                q = init['q'].copy()
+            else:
+                q = np.full(len(gamma), init['q'])
         else:
             q = np.full(len(gamma), 0.5)
 
         if 'alpha' in init:
-            alpha = init['alpha'].copy()
+            alpha = init['alpha']
         else:
             alpha = 1
 
         if 'beta' in init:
-            beta = init['beta'].copy()
+            beta = init['beta']
         else:
             beta = 1
 
