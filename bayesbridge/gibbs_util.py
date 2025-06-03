@@ -162,6 +162,9 @@ class MarkovChainManager():
         if 'beta' in params_to_save:
             samples['beta'] = np.zeros(n_sample)
 
+        if 'iter_time' in params_to_save:
+            samples['iter_time'] = np.zeros(n_sample)
+
         for key in self.get_sampling_info_keys(sampling_method):
             sampling_info[key] = np.zeros(n_sample)
 
@@ -184,7 +187,7 @@ class MarkovChainManager():
 
     def store_current_state(
             self, samples, mcmc_iter, n_burnin, thin, coef, lscale,
-            gscale, obs_prec, gamma, q, alpha, beta, logp, params_to_save):
+            gscale, obs_prec, gamma, q, alpha, beta, logp, iter_time, params_to_save):
 
         if mcmc_iter <= n_burnin or (mcmc_iter - n_burnin) % thin != 0:
             return
@@ -220,6 +223,9 @@ class MarkovChainManager():
 
         if 'beta' in params_to_save:
             samples['beta'][index] = beta
+
+        if 'iter_time' in params_to_save:
+            samples['iter_time'][index] = iter_time
 
     def store_sampling_info(
             self, sampling_info, info, mcmc_iter, n_burnin, thin, sampling_method):

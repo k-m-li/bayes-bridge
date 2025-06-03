@@ -235,6 +235,8 @@ class BayesBridge():
         # Start Gibbs sampling
         for mcmc_iter in range(1, n_iter + 1):
 
+            iter_start_time = time.time()
+
             coef, info = self.update_regress_coef(
                 coef, obs_prec, gscale, lscale, gamma, gamma_with_mixture, options.coef_sampler_type
             )    
@@ -265,10 +267,14 @@ class BayesBridge():
             logp = self.compute_posterior_logprob(
                 coef, gscale, obs_prec, self.prior.bridge_exp
             )
+            
+            iter_current_time = time.time()
+            iter_time = iter_current_time - iter_start_time
+            iter_time = float("{:.3g}".format(iter_time / 60))
 
             self.manager.store_current_state(
                 samples, mcmc_iter, n_burnin, thin, coef, lscale, gscale,
-                obs_prec, gamma, q, alpha, beta, logp, params_to_save
+                obs_prec, gamma, q, alpha, beta, logp, iter_time, params_to_save
             )
             self.manager.store_sampling_info(
                 sampling_info, info, mcmc_iter, n_burnin, thin,
